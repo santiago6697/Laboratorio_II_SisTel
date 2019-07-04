@@ -21,10 +21,10 @@ uint8_t adc_clk_div = 8;          // Recommended value issued by API reference.
 
 int i = 0;
 unsigned long start = 0;
+unsigned long end = 0;
 unsigned long total = 0;
 unsigned long tim = 0;
-
-int analog_buffer[127];
+unsigned long tot = 0;
 
 void setup() {
   oled.begin(SSD1306_SWITCHCAPVCC, OLED_Address);
@@ -41,21 +41,15 @@ void loop() {
 
   start = micros();
 
-  // Serial.println(system_adc_read());
   system_adc_read_fast(adc_addr, adc_num, adc_clk_div);
 
-  unsigned int tot = micros() - start;
-
   interrupts();
-  ets_intr_unlock(); //open interrupt
+  ets_intr_unlock(); // Open interrupt.
   system_soft_wdt_restart();
 
-  tim += tot;
-  total += num_samples * 1000000.0 / tot;
-  i++;
-  // for (int j=0; j<adc_num;  j++) {
-  //   Serial.println(adc_addr[j]);
-  // }
+  // tim += tot;
+  // total += num_samples * 1000000.0 / tot;
+  // i++;
   // int osc = analogRead(A0);
   // Serial.println(osc);
   // delayMicroseconds(1);
@@ -63,55 +57,123 @@ void loop() {
   // (int)(63-((float)adc_addr[j-1]/(float)1024)*63)
   // draw_gui();
   // Serial.println(adc_addr[sizeof(adc_addr)-1]);-
+  // int max_voltage_read = 0;
+  // int min_voltage_read = 1024;
   int max_voltage_read = 0;
-  int min_voltage_read = 1024;
-  int max_read_position = 0;
-  int min_read_position = 0;
+  int min_voltage_read = 0;
+  // int peak_delta = 0;
+  // int valley_delta = 0;
+  int mean_total = 0;
+  start = 0;
+  end = 0;
+  bool read_value = false;
+  // tot = 0;
+  total = 0;
+  Serial.println("Period: "+(String)mean_total);
+  // DEPRECATED: This kind of approach requires a lot of optimization and is not suitable for abrupt changes in waveform such as seen in square waves.
+  /* int zero_count = 0;
+  for (int j=0; j<adc_num;  j++) {
+     if (adc_addr[j-1] >= 487 && adc_addr[j-1] <= 537 ) {
+      // Serial.println(adc_addr[j-1]);
+      switch (zero_count) {
+        case 0:
+          zero_count = 1;
+          start = micros();
+          // Serial.println("First Zero!");
+        break;
+        case 3:
+          tot = micros() - start;
+          Serial.println("reached");
+          break;
+        default:
+          zero_count += 1;
+          break;
+      }
+    }
+  } */
+  int cnt = 0;
   for (int j = 4; j < 126; j++) {
     // min_voltage_read = adc_addr[j-1];
-    if ( adc_addr[j-1] > max_voltage_read ) {
+    /*if ( adc_addr[j-1] > max_voltage_read ) {
       max_voltage_read = adc_addr[j-1];
-      // max_read_position = j-1;
-      // Serial.println("Max: "+(String)max_voltage_read);
-      // Serial.println("Max: "+(String)max_read_position);
     }
     if ( adc_addr[j-1] < min_voltage_read ) {
       min_voltage_read = adc_addr[j-1];
-      // min_read_position = j-1;
-      // Serial.println("Min: "+(String)min_voltage_read);
-      // Serial.println("Min: "+(String)min_read_position);
+    }*/
+    // adc_addr[j-1] points to current position.
+    // if (((adc_addr[j-2] <= adc_addr[j-1]) && (adc_addr[j-1] >= adc_addr[j])) && (read_value == false)) Serial.println("OK");
+    if (((adc_addr[j-2] <= adc_addr[j-1]) && (adc_addr[j-1] >= adc_addr[j])) && (read_value == false) && (adc_addr[j-1] > 512)) {
+      max_voltage_read = adc_addr[j-1];
+      // Add dotted line drawer.
+      // start = micros();
+      start = micros();
+      // Serial.println("Period start: "+(String)start);
+      read_value = true;
+      oled.drawLine(j-1, 0, j-1, 63, WHITE);
+    }
+    if (((adc_addr[j-2] >= adc_addr[j-1]) && (adc_addr[j-1] <= adc_addr[j])) && (read_value == true) && (adc_addr[j-1] < 512)) {
+    //if ((adc_addr[j-2] >= min_voltage_read <= adc_addr[j]) && read_value) {
+      min_voltage_read = adc_addr[j-1];
+      // end = start - micros();
+      end = micros() - start;
+      // Serial.println("Period end: "+(String)end);
+      // Add dotted line drawer.
+      total = total + 2*end;
+      // Just in case it causes some sort of misreading.
+      start = 0;
+      end = 0;
+      read_value = false;
+      oled.drawLine(j-1, 20, j-1, 63, WHITE);
     }
     adc_addr[j-1] = adc_addr[j];
     oled.drawPixel(j-1, (int)(60-((float)adc_addr[j-1]/(float)1024)*46), WHITE);
-    delayMicroseconds(500);
+    // delayMicroseconds(500);
+    cnt++;
   }
-  float voltage = normalize_voltage(max_voltage_read, min_voltage_read);
-  draw_gui(voltage);
+  // Serial.println("Counter: "+(String)cnt);
+  float voltage = parse_voltage(max_voltage_read, min_voltage_read);
+  // Serial.println("Period: "+(String)total);
+  // mean_total = total/cnt;
+  mean_total = total;
+  Serial.println("Period: "+(String)mean_total);
+  // Serial.println("Period: "+(String)mean_total);
+  float frequency = parse_frequency((float)mean_total);
+  // Serial.println("Start: "+(String)start);
+  // Serial.println("Tot: "+(String)tot);
+  draw_gui(voltage, frequency);
   oled.display();
   // delayMicroseconds(1000);
   oled.clearDisplay();
   // delayMicroseconds(1000);
   // draw_gui();
-  if (i == 100) {
-       /* Serial.print("Sampling rate: ");
-       Serial.println(total / 100);
-       Serial.print("It lasted: ");
-       Serial.println(tim / 100); */
-      i = 0;
-      tim = 0;
-      total = 0;
-  }
+//  if (i == 100) {
+//       /* Serial.print("Sampling rate: ");
+//       Serial.println(total / 100);
+//       Serial.print("It lasted: ");
+//       Serial.println(tim / 100); */
+//      i = 0;
+//      tim = 0;
+//      total = 0;
+//  }
 }
 
-void draw_gui(float voltage) {
-  int frequency = 0;
+void draw_gui(float voltage, float frequency) {
+  // int frequency = 0;
   // int voltage = 0;
   oled.setCursor(2,1);
   oled.setTextColor(WHITE);
   oled.setTextSize(1);
-  oled.println("F: "+(String)frequency+"Hz");
+  char prefix = ' ';
+  // frequency = 1/frequency;
+  if (frequency >= 1000) {
+    frequency = frequency/1000;
+    prefix = 'k';
+    oled.println("F:"+(String)frequency+prefix+"Hz");
+  } else {
+    oled.println("F:"+(String)frequency+"Hz");
+  }
   oled.setCursor(64,1);
-  oled.println("V: "+(String)voltage+"vpp");
+  oled.println("V:"+(String)voltage+"vpp");
   oled.drawRect(2, 10, 124, 52, WHITE);
   for (int i = 2; i < 123; i++) {
     if (i%4 == 0){
@@ -121,8 +183,16 @@ void draw_gui(float voltage) {
   oled.display();
 }
 
-float normalize_voltage (int max_voltage_read, int min_voltage_read) {
+float parse_voltage (int max_voltage_read, int min_voltage_read) {
   float max_voltage = 3.3;
   int peak_to_peak_voltage = max_voltage_read - min_voltage_read;
   return max_voltage*((float)peak_to_peak_voltage/(float)1024);
+}
+
+float parse_frequency (float period) {
+  float frequency = 0;
+  if (period > 0) frequency = 1.0/(float)period;
+  frequency = frequency * 1000000;
+  // Serial.println("Freq: "+(String)frequency);
+  return frequency;
 }
