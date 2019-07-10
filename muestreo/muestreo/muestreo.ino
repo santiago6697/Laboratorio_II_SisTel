@@ -14,7 +14,7 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 ADC_MODE(ADC_TOUT);
 
-#define num_samples 2048          // Global number of samples.
+#define num_samples 4096          // Global number of samples.
 uint16_t adc_addr[num_samples];   // ADC point to the address of continuous sampling.
 uint16_t adc_num = num_samples;   // Sampling number [1, 65535].
 uint8_t adc_clk_div = 8;          // Recommended value issued by API reference.
@@ -22,7 +22,7 @@ uint8_t adc_clk_div = 8;          // Recommended value issued by API reference.
 int i = 0;
 unsigned long start = 0;
 unsigned long end = 0;
-unsigned long total = 0;
+float sampling_rate = 0;
 unsigned long tim = 0;
 unsigned long tot = 0;
 
@@ -37,112 +37,55 @@ void loop() {
   wifi_set_opmode(NULL_MODE);
   system_soft_wdt_stop();
   ets_intr_lock( ); //close interrupt
+  // Measuring sampling rate.
   noInterrupts();
-
   start = micros();
 
   system_adc_read_fast(adc_addr, adc_num, adc_clk_div);
-
+  
+  end = micros() - start;
+  // Yet, just the first heuristic approach.
+  sampling_rate = 4.545454545;
+  // Serial.println(sampling_rate);
   interrupts();
   ets_intr_unlock(); // Open interrupt.
   system_soft_wdt_restart();
-
-  // tim += tot;
-  // total += num_samples * 1000000.0 / tot;
-  // i++;
-  // int osc = analogRead(A0);
-  // Serial.println(osc);
-  // delayMicroseconds(1);
-  // analog_buffer[127] = (int)(63-((float)osc/(float)1024)*63);
-  // (int)(63-((float)adc_addr[j-1]/(float)1024)*63)
-  // draw_gui();
-  // Serial.println(adc_addr[sizeof(adc_addr)-1]);-
-  // int max_voltage_read = 0;
-  // int min_voltage_read = 1024;
   int max_voltage_read = 0;
   int min_voltage_read = 0;
-  // int peak_delta = 0;
-  // int valley_delta = 0;
-  int mean_total = 0;
-  start = 0;
-  end = 0;
+  float mean_period = 0;
   bool read_value = false;
-  // tot = 0;
-  total = 0;
-  Serial.println("Period: "+(String)mean_total);
-  // DEPRECATED: This kind of approach requires a lot of optimization and is not suitable for abrupt changes in waveform such as seen in square waves.
-  /* int zero_count = 0;
-  for (int j=0; j<adc_num;  j++) {
-     if (adc_addr[j-1] >= 487 && adc_addr[j-1] <= 537 ) {
-      // Serial.println(adc_addr[j-1]);
-      switch (zero_count) {
-        case 0:
-          zero_count = 1;
-          start = micros();
-          // Serial.println("First Zero!");
-        break;
-        case 3:
-          tot = micros() - start;
-          Serial.println("reached");
-          break;
-        default:
-          zero_count += 1;
-          break;
-      }
-    }
-  } */
   int cnt = 0;
-  for (int j = 4; j < 126; j++) {
-    // min_voltage_read = adc_addr[j-1];
-    /*if ( adc_addr[j-1] > max_voltage_read ) {
-      max_voltage_read = adc_addr[j-1];
-    }
-    if ( adc_addr[j-1] < min_voltage_read ) {
-      min_voltage_read = adc_addr[j-1];
-    }*/
+  int peak_position = 0;
+  int valley_position = 0;
+  float period = 0.0;
+  for (int j = 0; j < num_samples; j++) {
     // adc_addr[j-1] points to current position.
-    // if (((adc_addr[j-2] <= adc_addr[j-1]) && (adc_addr[j-1] >= adc_addr[j])) && (read_value == false)) Serial.println("OK");
     if (((adc_addr[j-2] <= adc_addr[j-1]) && (adc_addr[j-1] >= adc_addr[j])) && (read_value == false) && (adc_addr[j-1] > 512)) {
       max_voltage_read = adc_addr[j-1];
       // Add dotted line drawer.
-      // start = micros();
-      start = micros();
-      // Serial.println("Period start: "+(String)start);
+      peak_position = j-1;
       read_value = true;
-      oled.drawLine(j-1, 0, j-1, 63, WHITE);
+      // oled.drawLine(j-1, 36, j-1, fix_value(adc_addr[j-1]), WHITE);
     }
     if (((adc_addr[j-2] >= adc_addr[j-1]) && (adc_addr[j-1] <= adc_addr[j])) && (read_value == true) && (adc_addr[j-1] < 512)) {
-    //if ((adc_addr[j-2] >= min_voltage_read <= adc_addr[j]) && read_value) {
       min_voltage_read = adc_addr[j-1];
-      // end = start - micros();
-      end = micros() - start;
-      // Serial.println("Period end: "+(String)end);
       // Add dotted line drawer.
-      total = total + 2*end;
-      // Just in case it causes some sort of misreading.
-      start = 0;
-      end = 0;
+      valley_position = j-1;
+      period = 2 * (valley_position - peak_position);
       read_value = false;
-      oled.drawLine(j-1, 20, j-1, 63, WHITE);
+      // oled.drawLine(j-1, 36, j-1, fix_value(adc_addr[j-1]), WHITE);
     }
-    adc_addr[j-1] = adc_addr[j];
-    oled.drawPixel(j-1, (int)(60-((float)adc_addr[j-1]/(float)1024)*46), WHITE);
+    // adc_addr[j-1] = adc_addr[j];
+    // Heuristic approach.
+    if ((j-1 > 4) && (j-1 < 126)) oled.drawPixel(j-1, fix_value(adc_addr[j-1]), WHITE);
     // delayMicroseconds(500);
     cnt++;
   }
-  // Serial.println("Counter: "+(String)cnt);
   float voltage = parse_voltage(max_voltage_read, min_voltage_read);
-  // Serial.println("Period: "+(String)total);
-  // mean_total = total/cnt;
-  mean_total = total;
-  Serial.println("Period: "+(String)mean_total);
-  // Serial.println("Period: "+(String)mean_total);
-  float frequency = parse_frequency((float)mean_total);
-  // Serial.println("Start: "+(String)start);
-  // Serial.println("Tot: "+(String)tot);
+  period = period * sampling_rate;
+  float frequency = parse_frequency(period);
   draw_gui(voltage, frequency);
   oled.display();
-  // delayMicroseconds(1000);
   oled.clearDisplay();
   // delayMicroseconds(1000);
   // draw_gui();
@@ -164,7 +107,6 @@ void draw_gui(float voltage, float frequency) {
   oled.setTextColor(WHITE);
   oled.setTextSize(1);
   char prefix = ' ';
-  // frequency = 1/frequency;
   if (frequency >= 1000) {
     frequency = frequency/1000;
     prefix = 'k';
@@ -191,8 +133,11 @@ float parse_voltage (int max_voltage_read, int min_voltage_read) {
 
 float parse_frequency (float period) {
   float frequency = 0;
-  if (period > 0) frequency = 1.0/(float)period;
+  if (period > 0) frequency = 1.0/period;
   frequency = frequency * 1000000;
-  // Serial.println("Freq: "+(String)frequency);
   return frequency;
+}
+
+int fix_value (int value) {
+  return (int)(60-((float)value/(float)1024)*46);
 }
