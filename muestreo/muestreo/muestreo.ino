@@ -25,18 +25,18 @@ unsigned long end = 0;
 float sampling_rate = 0;
 unsigned long tim = 0;
 unsigned long tot = 0;
+int scale = 2;
 
 void setup() {
   oled.begin(SSD1306_SWITCHCAPVCC, OLED_Address);
   oled.clearDisplay();
   Serial.begin(115200);
-  // attachInterrupt(digitalPinToInterrupt(0), blink, CHANGE);
 }
 
 void loop() {
   wifi_set_opmode(NULL_MODE);
   system_soft_wdt_stop();
-  ets_intr_lock( ); //close interrupt
+  ets_intr_lock( ); // Close interrupt.
   // Measuring sampling rate.
   noInterrupts();
   start = micros();
@@ -46,7 +46,6 @@ void loop() {
   end = micros() - start;
   // Yet, just the first heuristic approach.
   sampling_rate = 4.545454545;
-  // Serial.println(sampling_rate);
   interrupts();
   ets_intr_unlock(); // Open interrupt.
   system_soft_wdt_restart();
@@ -59,27 +58,25 @@ void loop() {
   int valley_position = 0;
   float period = 0.0;
   for (int j = 0; j < num_samples; j++) {
-    // adc_addr[j-1] points to current position.
     if (((adc_addr[j-2] <= adc_addr[j-1]) && (adc_addr[j-1] >= adc_addr[j])) && (read_value == false) && (adc_addr[j-1] > 512)) {
       max_voltage_read = adc_addr[j-1];
-      // Add dotted line drawer.
       peak_position = j-1;
       read_value = true;
-      // oled.drawLine(j-1, 36, j-1, fix_value(adc_addr[j-1]), WHITE);
     }
     if (((adc_addr[j-2] >= adc_addr[j-1]) && (adc_addr[j-1] <= adc_addr[j])) && (read_value == true) && (adc_addr[j-1] < 512)) {
       min_voltage_read = adc_addr[j-1];
-      // Add dotted line drawer.
       valley_position = j-1;
       period = 2 * (valley_position - peak_position);
+      if (period >= 220) {
+        scale = 8;
+      } else if (period < 220) {
+        scale = 2;
+      }
       read_value = false;
-      // oled.drawLine(j-1, 36, j-1, fix_value(adc_addr[j-1]), WHITE);
     }
     // adc_addr[j-1] = adc_addr[j];
     // Heuristic approach.
-    if ((j-1 > 4) && (j-1 < 126)) oled.drawPixel(j-1, fix_value(adc_addr[j-1]), WHITE);
-    // delayMicroseconds(500);
-    cnt++;
+    if ((j-1 > 4) && (j-1 < 126)) oled.drawPixel(j-1, fix_value(adc_addr[int(j-1)*scale]), WHITE);
   }
   float voltage = parse_voltage(max_voltage_read, min_voltage_read);
   period = period * sampling_rate;
@@ -101,8 +98,6 @@ void loop() {
 }
 
 void draw_gui(float voltage, float frequency) {
-  // int frequency = 0;
-  // int voltage = 0;
   oled.setCursor(2,1);
   oled.setTextColor(WHITE);
   oled.setTextSize(1);
