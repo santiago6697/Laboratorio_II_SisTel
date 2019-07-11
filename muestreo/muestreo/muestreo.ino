@@ -67,7 +67,9 @@ void loop() {
       min_voltage_read = adc_addr[j-1];
       valley_position = j-1;
       period = 2 * (valley_position - peak_position);
-      if (period >= 220) {
+      if (period >= 550){
+        scale = 16;
+      } else if ((period >= 220) && (period < 550)) {
         scale = 8;
       } else if (period < 220) {
         scale = 2;
